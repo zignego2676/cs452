@@ -1,0 +1,19 @@
+# Distances: name1, name2, distance (miles  undirected)
+La Crosse, La Crescent,5
+La Crosse, Onalaska,6
+La Crosse, Winona,31.6
+La Crosse, Rochester,72
+La Crosse, Eau Claire,87
+La Crosse, Tomah,45
+Onalaska, Winona,25
+Onalaska, Eau Claire,78
+Winona, Rochester,45
+Winona, Minneapolis,116
+Rochester, Minneapolis,86
+La Crescent, Minneapolis,142
+Eau Claire, Minneapolis,91
+Tomah, Madison,97
+Eau Claire, Madison,180
+Madison, Chicago,147
+Rochester, Chicago,297
+Minneapolis, Chicago,408
