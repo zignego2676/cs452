@@ -8,56 +8,39 @@ from collections import defaultdict, namedtuple
 
 # python data stucture wowee
 Variable = namedtuple("Variable", ["name", "cells", "length", "number", "direction"])
-# direction: "across" or "down"
-
-# Begin file parsing helpers #
-def load_dictionary(filename):
-    words = []
-
-    with open(filename, 'r') as f:
-        for line in f:
-            w = line.strip()
-            if w:
-                words.append(w.upper())
-
-    return words
-
-def load_puzzle(filename):
-    with open(filename, 'r') as f:
-        tokens = []
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            for p in parts:
-                tokens.append(p)
-
-    rows = int(tokens[0])
-    cols = int(tokens[1])
-    grid = []
-    numbers = {}
-    idx = 2
-
-    for r in range(rows):
-        row = []
-        for c in range(cols):
-            tok = tokens[idx]
-            idx += 1
-            if tok == '#':
-                row.append('#')
-            elif tok == '_':
-                row.append('_')
-            else:
-                num = int(tok)
-                row.append('_')
-                numbers[(r, c)] = num
-        grid.append(row)
-
-    return rows, cols, grid, numbers
-# End file parsing helpers #
+# direction can be "across" or "down"
 
 # CSP shenanigans
+def build_csp(variables, dictionary):
+    domains = {}
+
+    for var in variables:
+        domains[var.name] = sorted([word for word in dictionary if len(word) == var.length])
+
+    neighbors = defaultdict(set)
+    intersections = dict()  
+    cells = defaultdict(list)
+
+    for var in variables:
+        for i, cell in enumerate(var.cells):
+            cells[cell].append((var.name, i))
+
+    for cell, lst in cells.items():
+        if len(lst) > 1:
+            for a in range(len(lst)):
+                for b in range(a+1, len(lst)):
+                    v1, i1 = lst[a]
+                    v2, i2 = lst[b]
+                    neighbors[v1].add(v2)
+                    neighbors[v2].add(v1)
+                    intersections[(v1, v2)] = (i1, i2)
+                    intersections[(v2, v1)] = (i2, i1)
+
+    constraintEdges = len({frozenset([a,b]) for (a,b) in intersections.keys()}) // 1
+
+    return domains, neighbors, intersections
+
+# to help with finding blanks and such
 def extract_variables(rows, cols, grid, numbers):
     varsByNumber = defaultdict(list)
     variables = []
@@ -102,34 +85,6 @@ def extract_variables(rows, cols, grid, numbers):
 
     return orderedVars
 
-def build_csp(variables, dictionary):
-    domains = {}
-
-    for var in variables:
-        domains[var.name] = sorted([word for word in dictionary if len(word) == var.length])
-
-    neighbors = defaultdict(set)
-    intersections = dict()  
-    cells = defaultdict(list)
-
-    for var in variables:
-        for i, cell in enumerate(var.cells):
-            cells[cell].append((var.name, i))
-
-    for cell, lst in cells.items():
-        if len(lst) > 1:
-            for a in range(len(lst)):
-                for b in range(a+1, len(lst)):
-                    v1, i1 = lst[a]
-                    v2, i2 = lst[b]
-                    neighbors[v1].add(v2)
-                    neighbors[v2].add(v1)
-                    intersections[(v1, v2)] = (i1, i2)
-                    intersections[(v2, v1)] = (i2, i1)
-
-    constraintEdges = len({frozenset([a,b]) for (a,b) in intersections.keys()}) // 1
-
-    return domains, neighbors, intersections
 
 # Heuristic shenanigans
 def select_variable(variablesOrder, domains, neighbors, assignment, var_selection):
@@ -190,22 +145,22 @@ def is_consistent(var, val, assignment, domains, neighbors, intersections, lfc):
                 found_support = False
 
                 for cand in domains[n]:
-                    ok = True
+                    flag = True
 
                     if cand[j] != val[i]:
-                        ok = False
+                        flag = False
 
-                    if not ok:
+                    if not flag:
                         continue
 
                     for other in neighbors[n]:
                         if other in assignment and other != var and (n, other) in intersections:
                             in_j, in_k = intersections[(n, other)]
                             if cand[in_j] != assignment[other][in_k]:
-                                ok = False
+                                flag = False
                                 break
 
-                    if ok:
+                    if flag:
                         found_support = True
                         break
 
@@ -231,21 +186,21 @@ def lcv_order(var, domains, neighbors, intersections, assignment):
             compatible = 0
 
             for cand in domains[n]:
-                ok = True
+                flag = True
                 if cand[j] != val[i]:
-                    ok = False
+                    flag = False
 
-                if not ok:
+                if not flag:
                     continue
 
                 for other in neighbors[n]:
                     if other in assignment and (n, other) in intersections:
                         in_j, in_k = intersections[(n, other)]
                         if cand[in_j] != assignment[other][in_k]:
-                            ok = False
+                            flag = False
                             break
 
-                if ok:
+                if flag:
                     compatible += 1
 
             elim += (len(domains[n]) - compatible)
@@ -257,9 +212,7 @@ def lcv_order(var, domains, neighbors, intersections, assignment):
     return [v for _, v in scores]
 
 # the big backtrack search
-def backtracking_search(variables, domains, neighbors, intersections,
-                        variableSelection, valueOrder, lfc,
-                        verbosity):
+def backtracking_search(variables, domains, neighbors, intersections, variableSelection, valueOrder, lfc, verbosity):
     variablesOrder = [v.name for v in variables]
     assignment = {}
     nodes = 0
@@ -268,10 +221,11 @@ def backtracking_search(variables, domains, neighbors, intersections,
 
     for (a, b) in intersections.keys():
         constraint_set.add(tuple(sorted((a, b))))
+
     numConstraints = len(constraint_set)
 
     def backtrack(depth=0):
-        # can do some crazy shenanigans in python man
+        # evil python recursion
         nonlocal nodes
         nodes += 1
         if len(assignment) == len(variablesOrder):
@@ -291,13 +245,13 @@ def backtracking_search(variables, domains, neighbors, intersections,
             print(f"{indent}Select {var}; trying values: {', '.join(vals)}")
 
         for val in vals:
-            ok = is_consistent(var, val, assignment, domains, neighbors, intersections, lfc)
+            flag = is_consistent(var, val, assignment, domains, neighbors, intersections, lfc)
 
             if verbosity >= 2:
                 indent = "  " * depth
                 print(f"{indent}Try {var}={val} -> {'consistent' if ok else 'inconsistent'}")
 
-            if not ok:
+            if not flag:
                 continue
 
             assignment[var] = val
@@ -315,6 +269,53 @@ def backtracking_search(variables, domains, neighbors, intersections,
     elapsed = endTime - startTime
 
     return solution, elapsed, nodes, len(variablesOrder), numConstraints
+
+# Begin file parsing helpers #
+def load_dictionary(filename):
+    words = []
+
+    with open(filename, 'r') as f:
+        for line in f:
+            w = line.strip()
+            if w:
+                words.append(w.upper())
+
+    return words
+
+def load_puzzle(filename):
+    with open(filename, 'r') as f:
+        tokens = []
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            for p in parts:
+                tokens.append(p)
+
+    rows = int(tokens[0])
+    cols = int(tokens[1])
+    grid = []
+    numbers = {}
+    idx = 2
+
+    for r in range(rows):
+        row = []
+        for c in range(cols):
+            tok = tokens[idx]
+            idx += 1
+            if tok == '#':
+                row.append('#')
+            elif tok == '_':
+                row.append('_')
+            else:
+                num = int(tok)
+                row.append('_')
+                numbers[(r, c)] = num
+        grid.append(row)
+
+    return rows, cols, grid, numbers
+# End file parsing helpers #
 
 # Output printing
 def print_solution_grid(rows, cols, grid, numbers, variables, assignment):
